@@ -23,11 +23,9 @@ async function find<T>(
 
 test("simple find", async () => {
   const a = ReadableStream.from([1, 2, 3]);
-  
 
   const r = await find(a, (a) => a > 1);
 
-  
   assert.deepEqual(r, 2);
 });
 
@@ -36,7 +34,7 @@ test("find leaves the stream readable", async () => {
   await find(a, (a) => a > 1);
   const r = await find(a, (a) => a > 1);
   assert.deepEqual(r, 3);
-  })
+});
 
 test.todo("example from lodash");
 

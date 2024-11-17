@@ -3,10 +3,11 @@
   "version": "0.0.1",
   "description": "lodash for streams",
   "main": "index.js",
-  "type":"module",
+  "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types *.test.ts"
+    "test": "node --test --experimental-strip-types *.test.ts",
+    "format": "prettier --write ."
   },
   "repository": {
     "type": "git",
@@ -26,6 +27,7 @@
   "homepage": "https://github.com/trevorah/losplash#readme",
   "dependencies": {
     "@types/node": "^22.9.0",
+    "prettier": "^3.3.3",
     "typescript": "^5.6.3"
   }
 }
