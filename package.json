@@ -1,0 +1,25 @@
+{
+  "name": "losplash",
+  "version": "0.0.1",
+  "description": "lodash for streams",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test --experimental-strip-types"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/trevorah/losplash.git"
+  },
+  "keywords": [
+    "lodash",
+    "stream",
+    "web-stream",
+    "utils"
+  ],
+  "author": "Andy Trevorah",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/trevorah/losplash/issues"
+  },
+  "homepage": "https://github.com/trevorah/losplash#readme"
+}
