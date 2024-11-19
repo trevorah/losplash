@@ -1,50 +1,50 @@
 import test from "node:test";
 import { ReadableStream, TransformStream } from "node:stream/web";
 import assert from "node:assert";
+import { find } from "./find.ts";
+import { enforceSorted } from "./enforceSorted.ts";
 
-function difference<T>(primary: ReadableStream<T>, ...streams: ReadableStream<T>[]): ReadableStream<T> {
+function differenceWith<T>(
+  source: ReadableStream<T>,
+  stream1: ReadableStream<T>,
+  comparator: (a: T, b: T) => number,
+): ReadableStream<T> {
+  const reader = source.pipeThrough(enforceSorted(comparator)).getReader();
 
-  const reader = primary.getReader();
-
-  let latest = []
-
-
+  let latest: T | undefined;
 
   return new ReadableStream<T>({
+    async pull(controller) {
+      while (true) {
+        const { done, value } = await reader.read();
 
-async pull(controller) {
+        if (done) {
+          controller.close();
+          return;
+        }
 
-  const { done, value } = await reader.read();
+        if (latest === undefined || comparator(latest, value) > 0) {
+          latest = await find(stream1, (a) => comparator(value, a) <= 0);
+        }
 
-  if (done) {
-    controller.close();
-    return;
-  }
+        if (latest === undefined) {
+          controller.close();
+        }
 
- if (latest.length > 0 && latest.find((a) => a === value)) {
-   
- }
-
-  const 
-
-  restReaders.forEach((reader, i) => {
-    
-
-  
-
-
-  }
-    })
-  
-  
-      
+        if (latest !== value) {
+          controller.enqueue(value);
+          return;
+        }
+      }
+    },
+  });
 }
 
 test("simple difference", async () => {
   const a = ReadableStream.from([1, 2]);
-  const b = ReadableStream.from([2,3]);
+  const b = ReadableStream.from([2, 3]);
 
-  const r = difference(a, b);
+  const r = differenceWith(a, b, (a, b) => a - b);
 
   const rArray = await Array.fromAsync(r);
   assert.deepEqual(rArray, [1]);
