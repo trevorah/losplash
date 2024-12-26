@@ -2,14 +2,12 @@ import { ReadableStream } from "node:stream/web";
 import { Readable } from "node:stream";
 import fs from "node:fs";
 import test from "node:test";
-import { Chunker } from "./extract";
-import { TextDecoder } from "node:util";
-import { concatByteStream } from "./sink";
-import assert = require("node:assert");
+import { extract } from "./tar.ts";
+import assert from "node:assert";
 
 test("one-file", async () => {
   const tarStream = Readable.toWeb(
-    fs.createReadStream("src/__tests__/fixtures/one-file.tar")
+    fs.createReadStream("__fixtures__/fixtures/one-file.tar")
   );
 
   const files = await Array.fromAsync(

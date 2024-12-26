@@ -2,9 +2,10 @@ import { ReadableStream } from "node:stream/web";
 import { Readable } from "node:stream";
 import fs from "node:fs";
 import test from "node:test";
-import { Chunker } from "./extract";
 import { TextDecoder } from "node:util";
-import { concatByteStream } from "./sink";
+import { concatByteStream } from "./sink.ts";
+import { Something } from "./something.ts";
+import { Header as HeaderClass } from "./header.ts";
 
 type FileType =
   | "file"
@@ -27,31 +28,31 @@ const fileTypeMapping: Record<string, FileType> = {
   "7": "contiguous-file",
 };
 
-enum FileTypeIndicator {
-  /** regular file */
-  REGTYPE = "0",
-  /** regular file */
-  AREGTYPE = "\0",
-  /** link */
-  LNKTYPE = "1",
-  /** reserved */
-  SYMTYPE = "2",
-  /** character special */
-  CHRTYPE = "3",
-  /** block special */
-  BLKTYPE = "4",
-  /** directory */
-  DIRTYPE = "5",
-  /** FIFO special */
-  FIFOTYPE = "6",
-  /** reserved */
-  CONTTYPE = "7",
+// enum FileTypeIndicator {
+//   /** regular file */
+//   REGTYPE = "0",
+//   /** regular file */
+//   AREGTYPE = "\0",
+//   /** link */
+//   LNKTYPE = "1",
+//   /** reserved */
+//   SYMTYPE = "2",
+//   /** character special */
+//   CHRTYPE = "3",
+//   /** block special */
+//   BLKTYPE = "4",
+//   /** directory */
+//   DIRTYPE = "5",
+//   /** FIFO special */
+//   FIFOTYPE = "6",
+//   /** reserved */
+//   CONTTYPE = "7",
 
-  /** Extended header referring to the next file in the archive */
-  XHDTYPE = "x",
-  /** Global extended header */
-  XGLTYPE = "g",
-}
+//   /** Extended header referring to the next file in the archive */
+//   XHDTYPE = "x",
+//   /** Global extended header */
+//   XGLTYPE = "g",
+// }
 
 type PosixHeader = {
   name: string;
@@ -59,7 +60,7 @@ type PosixHeader = {
   size: number;
   mode: number;
   mtime: number;
-  type: FileTypeIndicator;
+  // type: FileTypeIndicator;
   linkname: string | null;
   uid: number;
   gid: number;
@@ -118,35 +119,22 @@ export type Entry = {
   body: ReadableStream<Uint8Array>;
 };
 
-function flattenBytes(): TransformStream<Uint8Array, Uint8Array> {
-
-  return new TransformStream({
-    readableType:
-    async transform(chunk, controller) {
-      for (const byte of chunk) {
-        controller.enqueue(new Uint8Array([byte]));
-      }
-    },
-  });
-}
-
 export function extract(): TransformStream<Uint8Array, Entry> {
   const t = new TransformStream({});
-
-  const byteStream = t.readable.pipeThrough(flattenBytes());
+  const segmentedStream = new Something(t.readable);
 
   const readable = new ReadableStream({
-    pull(controller) {
-      const headerBin = await join(t.readable.pipeThrough(take(512)));
-      const header = decodeHeader(headerBin);
-      if (header.type === FileTypeIndicator.XHDTYPE) {
-        // do special stuff
-      } else if (header.type === FileTypeIndicator.XGLTYPE) {
-        // do special stuff
-      }
+    async pull(controller) {
+      const headerBin = await join(segmentedStream.next(512));
+      const header = new HeaderClass(headerBin);
+      // if (header.type === FileTypeIndicator.XHDTYPE) {
+      //   // do special stuff
+      // } else if (header.type === FileTypeIndicator.XGLTYPE) {
+      //   // do special stuff
+      // }
 
-      const lastBodyStream = t.readable.pipeThrough(take(header.size));
-      controller.enqueue({ header, body: lastBodyStream });
+      const body = segmentedStream.next(header.fileSize);
+      controller.enqueue({ header, body });
     },
   });
 
@@ -156,52 +144,6 @@ export function extract(): TransformStream<Uint8Array, Entry> {
   };
 }
 
-export async function* extract0(stream: ReadableStream) {
-  const reader = stream.pipeThrough(new Chunker()).getReader();
-
-  let consecutiveZeroFilledRecords = 0;
-  let xPaxHeader: PaxHeader | null = null;
-  let gPaxHeader: PaxHeader | null = null;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      console.log("done");
-      break;
-    }
-    if (isEmpty(value)) {
-      consecutiveZeroFilledRecords++;
-      break;
-    } else {
-      consecutiveZeroFilledRecords = 0;
-    }
-    // const header = parseHeader(value);
-    const pHeader = decodeHeader(value);
-
-    if (pHeader.type === FileTypeIndicator.XHDTYPE) {
-      const extendedHeaderStream = createFileStream(reader, pHeader.size);
-      const extendedHeader = await concatByteStream(extendedHeaderStream);
-      xPaxHeader = decodePax(extendedHeader);
-      console.log(xPaxHeader);
-    } else if (pHeader.type === FileTypeIndicator.XGLTYPE) {
-      const globalExtendedHeaderStream = createFileStream(reader, pHeader.size);
-      const globalExtendedHeader = await concatByteStream(
-        globalExtendedHeaderStream
-      );
-      gPaxHeader = decodePax(globalExtendedHeader);
-    } else {
-      const header = deriveHeader(pHeader, xPaxHeader, gPaxHeader);
-      xPaxHeader = null;
-      console.log(header);
-
-      const fileStream = createFileStream(reader, header.size);
-      yield {
-        header,
-        body: fileStream,
-      };
-    }
-  }
-}
 
 function createFileStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -306,7 +248,7 @@ export function decodeHeader(view: Uint8Array): PosixHeader {
     gid,
     mtime,
     linkname,
-    type,
+    // type,
     uname,
     gname,
     devmajor,
@@ -368,32 +310,32 @@ function decodePax(view: Uint8Array): PaxHeader {
   return pax;
 }
 
-function deriveHeader(
-  posixHeader: PosixHeader,
-  xPaxHeader: PaxHeader | null,
-  gPaxHeader: PaxHeader | null
-): Header {
-  console.log({ posixHeader, xPaxHeader });
-  return {
-    name:
-      xPaxHeader?.path ??
-      (posixHeader.prefix
-        ? posixHeader.prefix + "/" + posixHeader.name
-        : posixHeader.name),
-    size: xPaxHeader?.size ?? posixHeader.size,
-    mode: posixHeader.mode,
-    mtime: new Date(posixHeader.mtime * 1000),
-    type: fileTypeMapping[posixHeader.type] as any,
-    linkname: posixHeader.linkname || null,
-    uid: xPaxHeader?.uid || posixHeader.uid,
-    gid: xPaxHeader?.gid || posixHeader.gid,
-    uname: xPaxHeader?.uname || posixHeader.uname,
-    gname: xPaxHeader?.gname || posixHeader.gname,
-    devmajor: posixHeader.devmajor,
-    devminor: posixHeader.devminor,
-    // pax: xPaxHeader,
-  };
-}
+// function deriveHeader(
+//   posixHeader: PosixHeader,
+//   xPaxHeader: PaxHeader | null,
+//   gPaxHeader: PaxHeader | null
+// ): Header {
+//   console.log({ posixHeader, xPaxHeader });
+//   return {
+//     name:
+//       xPaxHeader?.path ??
+//       (posixHeader.prefix
+//         ? posixHeader.prefix + "/" + posixHeader.name
+//         : posixHeader.name),
+//     size: xPaxHeader?.size ?? posixHeader.size,
+//     mode: posixHeader.mode,
+//     mtime: new Date(posixHeader.mtime * 1000),
+//     type: fileTypeMapping[posixHeader.type] as any,
+//     linkname: posixHeader.linkname || null,
+//     uid: xPaxHeader?.uid || posixHeader.uid,
+//     gid: xPaxHeader?.gid || posixHeader.gid,
+//     uname: xPaxHeader?.uname || posixHeader.uname,
+//     gname: xPaxHeader?.gname || posixHeader.gname,
+//     devmajor: posixHeader.devmajor,
+//     devminor: posixHeader.devminor,
+//     // pax: xPaxHeader,
+//   };
+// }
 
 function parseString(view: Uint8Array): string {
   return utf8decoder.decode(trimNullTerminated(view));
@@ -414,46 +356,8 @@ function parseOctal(view: Uint8Array) {
   return parseInt(trimmed, 8);
 }
 
-test("one-file", async () => {
-  const tarStream = Readable.toWeb(
-    fs.createReadStream("src/__tests__/fixtures/one-file.tar")
-  );
 
-  const files = tarStream.pipeThrough(extract()).pipeThrough(
-    map(async (entry) => {
-      const { header, body } = entry;
-      const text = (
-        await Array.fromAsync(body.pipeThrough(new TextDecoderStream()))
-      ).join("");
-      return { header, text };
-    })
-  );
 
-  let entries = [];
-
-  for await (const file of extract(f)) {
-    const { body, header } = file;
-    const text = textDecoder.decode(concat(await sink(body)));
-    entries.push({ header, text });
-  }
-  expect(files).toEqual([
-    {
-      header: {
-        name: "test.txt",
-        mode: 0o644,
-        uid: 501,
-        gid: 20,
-        size: 12,
-        mtime: new Date(1387580181000),
-        type: "file",
-        linkname: null,
-        uname: "maf",
-        gname: "staff",
-        devmajor: 0,
-        devminor: 0,
-        // pax: null
-      },
-      text: "hello world\n",
-    },
-  ]);
-});
+function join(stream: ReadableStream<Uint8Array>) {
+  return concatByteStream(stream);
+}
